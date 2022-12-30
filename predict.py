@@ -10,7 +10,7 @@ import cog
 from detectron2.config import CfgNode as CN
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
-from detectron2.utils.visualizer import Visualizer, ColorMode
+from detectron2.detectron2.utils.visualizer import Visualizer, ColorMode
 from detectron2.data import MetadataCatalog
 from detectron2.projects.deeplab import add_deeplab_config
 

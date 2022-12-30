@@ -4,15 +4,16 @@ import argparse
 import glob
 import multiprocessing as mp
 import os
-
+import pickle
 # fmt: off
 import sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 # fmt: on
-
+from pathlib import *
 import tempfile
 import time
 import warnings
+from skimage.transform import resize
 
 import cv2
 import numpy as np
@@ -46,7 +47,7 @@ def get_parser():
     parser = argparse.ArgumentParser(description="maskformer2 demo for builtin configs")
     parser.add_argument(
         "--config-file",
-        default="configs/coco/panoptic-segmentation/maskformer2_R50_bs16_50ep.yaml",
+        default="./configs/coco/panoptic-segmentation/maskformer2_R50_bs16_50ep.yaml",
         metavar="FILE",
         help="path to config file",
     )
@@ -102,7 +103,6 @@ if __name__ == "__main__":
     setup_logger(name="fvcore")
     logger = setup_logger()
     logger.info("Arguments: " + str(args))
-
     cfg = setup_cfg(args)
 
     demo = VisualizationDemo(cfg)
@@ -111,34 +111,64 @@ if __name__ == "__main__":
         if len(args.input) == 1:
             args.input = glob.glob(os.path.expanduser(args.input[0]))
             assert args.input, "The input path(s) was not found"
+
         for path in tqdm.tqdm(args.input, disable=not args.output):
             # use PIL, to be consistent with evaluation
-            img = read_image(path, format="BGR")
-            start_time = time.time()
-            predictions, visualized_output = demo.run_on_image(img)
-            logger.info(
-                "{}: {} in {:.2f}s".format(
-                    path,
-                    "detected {} instances".format(len(predictions["instances"]))
-                    if "instances" in predictions
-                    else "finished",
-                    time.time() - start_time,
-                )
-            )
 
-            if args.output:
-                if os.path.isdir(args.output):
-                    assert os.path.isdir(args.output), args.output
-                    out_filename = os.path.join(args.output, os.path.basename(path))
+            i =  0
+            for filename in os.listdir(path):
+                print(i)
+                i = i + 1
+
+                f = os.path.join(path, filename)
+
+                img = read_image(f, format="BGR")
+
+                img = resize(img, (img.shape[0]//2, img.shape[1]//2, img.shape[2])) * 255
+                img = np.round(img)
+
+                start_time = time.time()
+                predictions, visualized_output = demo.run_on_image(img)
+                logger.info(
+                    "{}: {} in {:.2f}s".format(
+                        path,
+                        "detected {} instances".format(len(predictions["instances"]))
+                        if "instances" in predictions
+                        else "finished",
+                        time.time() - start_time,
+                    )
+                )
+
+                if args.output:
+                    if os.path.isdir(args.output):
+                        assert os.path.isdir(args.output), args.output
+                        out_filename = os.path.join(args.output, os.path.basename(f))
+                    else:
+                        assert len(args.input) == 1, "Please specify a directory with args.output"
+                        out_filename = args.output
+
+                    visualized_output.save(out_filename)
+
+                    p = Path(out_filename)
+                    p = p.parent
+                    suffix = os.path.splitext(f)[0][-4:]
+                    folder = str(p) + '/pickle_files/'
+                    pkl_filename = folder + suffix + '.pickle'
+                    Path(folder).mkdir(parents=True, exist_ok=True)
+                    with open(pkl_filename, 'wb',) as handle:
+                        pickle.dump(predictions['sem_seg'], handle)
+
+                    folder = str(p) + '/images/'
+                    pkl_filename = folder + suffix + os.path.splitext(f)[1]
+                    Path(folder).mkdir(parents=True, exist_ok=True)
+                    cv2.imwrite(pkl_filename, img)
+
+
                 else:
-                    assert len(args.input) == 1, "Please specify a directory with args.output"
-                    out_filename = args.output
-                visualized_output.save(out_filename)
-            else:
-                cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-                cv2.imshow(WINDOW_NAME, visualized_output.get_image()[:, :, ::-1])
-                if cv2.waitKey(0) == 27:
-                    break  # esc to quit
+                    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+                    cv2.imshow(WINDOW_NAME, visualized_output.get_image()[:, :, ::-1])
+                    if cv2.waitKey(0) == 27:
+                        break  # esc to quit
     elif args.webcam:
         assert args.input is None, "Cannot have both --input and --webcam!"
         assert args.output is None, "output not yet supported with --webcam!"
